@@ -20,15 +20,15 @@ logging.basicConfig(
     handlers=[logging.StreamHandler()]
 )
 
-def calculate_v_n(Sn,Sn_1):
+def determine_v_n(Sn,Sn_1):
     v_n = (Sn - Sn_1) / 1 #delta_t = 1
 
+    # Pemeriksaan untuk mencegah pembagian dengan nol 
     if abs(v_n) < 1e-12:
-        return 1e-12  # Return small value instead of 1 to avoid division issues
-
+        return 1e-12 
     return v_n
 
-def calculate_alpha_n(Sn_minus_4, Sn_minus_3, Sn_minus_2, Sn_minus_1):
+def determine_alpha_n(Sn_minus_4, Sn_minus_3, Sn_minus_2, Sn_minus_1):
     AA = (Sn_minus_2 - 2 * Sn_minus_3 + Sn_minus_4)
     BB = (Sn_minus_1 - Sn_minus_2)
     CC = (Sn_minus_1 - 2 * Sn_minus_2 + Sn_minus_3)
@@ -37,21 +37,24 @@ def calculate_alpha_n(Sn_minus_4, Sn_minus_3, Sn_minus_2, Sn_minus_1):
     alpha_pembilang = (AA * BB) - (CC * DD)
     alpha_penyebut = DD * BB * (DD - BB) 
 
+    # Pemeriksaan untuk mencegah pembagian dengan nol 
     if abs(alpha_penyebut) < 1e-12:
-        return 1e-12  # Return small value instead of 1
+        return 1e-12  
     return (alpha_pembilang/alpha_penyebut)
 
-def calculate_beta_n(Sn_minus_3, Sn_minus_2, Sn_minus_1, alpha_n):
+def determine_beta_n(Sn_minus_3, Sn_minus_2, Sn_minus_1, alpha_n):
     CC = (Sn_minus_1 - 2 * Sn_minus_2 + Sn_minus_3)
     BB = (Sn_minus_1 - Sn_minus_2)
 
+    # Pemeriksaan untuk mencegah pembagian dengan nol 
     if abs(BB) < 1e-12:
-        return 1e-12  # Return small value instead of 1
+        return 1e-12 
     
     return (CC-(alpha_n * (BB**2)))/(BB * 1) #delta_t = 1
 
-def calculate_h_n(v_1, alpha_n, beta_n):
-    # Add safety checks to prevent division by zero
+def determine_h_n(v_1, alpha_n, beta_n):
+    
+    # Pemeriksaan untuk mencegah pembagian dengan nol 
     if abs(alpha_n) < 1e-12:
         alpha_n = 1e-12
     if abs(v_1) < 1e-12:
@@ -60,14 +63,14 @@ def calculate_h_n(v_1, alpha_n, beta_n):
     try:
         h_n = abs((v_1 + (beta_n / alpha_n) / v_1))
         return h_n
-    except (ZeroDivisionError, OverflowError) as e:
-        logging.warning(f"Error in calculate_h_n: {e}. Using fallback value.")
+    except (ZeroDivisionError) as e:
+        logging.warning(f"Error in determine_h_n: {e}. Using fallback value.")
         return 1.0
 
-def calculate_s_n(s1, alpha, beta, h, condition_1, s_n, v_n, v_1):
-    logging.debug(f"calculate_s_n called with: s1={s1}, alpha={alpha}, beta={beta}, h={h}, condition_1={condition_1}, s_n={s_n}, v_n={v_n}, v_1={v_1}")
+def determine_s_n(s1, alpha, beta, h, condition_1, s_n, v_n, v_1):
+    logging.debug(f"determine_s_n called with: s1={s1}, alpha={alpha}, beta={beta}, h={h}, condition_1={condition_1}, s_n={s_n}, v_n={v_n}, v_1={v_1}")
 
-    # Safety checks
+    # Pemeriksaan untuk mencegah pembagian dengan nol 
     if abs(alpha) < 1e-12:
         alpha = 1e-12
     if abs(beta) < 1e-12:
@@ -94,13 +97,13 @@ def calculate_s_n(s1, alpha, beta, h, condition_1, s_n, v_n, v_1):
         if condition_1 < 0 and not condition_2 and not condition_3:
             s_n = s1 + mp.fabs(1/alpha) * mp.log(mp.fabs(mp.exp(-mp.fabs(beta)) + h) / (1 + h))
     except (ZeroDivisionError) as e:
-        logging.error(f'Error in calculate_s_n: {e}. Using fallback value.')
-        s_n = s1  # Use previous value as fallback
+        logging.error(f'Error in determine_s_n: {e}. Using fallback value.')
+        s_n = s1  # menggunakan nilai sebelumnya sebagai nilai fallback
 
-    logging.debug(f'calculate_s_n result: s_n={s_n}')
+    logging.debug(f'determine_s_n result: s_n={s_n}')
     return s_n
 
-def calculate_MAPE_list(actual: list, predicted: list) -> list:
+def determine_MAPE_list(actual: list, predicted: list) -> list:
     logging.debug(f'actual: {actual}, len {len(actual)}')
     logging.debug(f"predicted: {predicted}, len {len(predicted)}")
     min_len = min(len(actual), len(predicted))
@@ -111,7 +114,7 @@ def calculate_MAPE_list(actual: list, predicted: list) -> list:
     mape_list = []
     for i in range(num_of_cases):
         if actual[i] == 0:
-            continue  # Skip if actual value is zero to avoid division by zero
+            continue  # Skip jika nilai aktual = 0 untuk menghindari pembagian 0
         abs_error = mp.fabs(actual[i] - predicted[i])
         percentage_error = abs_error / actual[i]
         sum_of_percentage_error += percentage_error
@@ -119,103 +122,99 @@ def calculate_MAPE_list(actual: list, predicted: list) -> list:
         mape_list.append(float(MAPE))
     return mape_list
 
-def fit(closing_prices, stock_name):
-    logging.debug(f'fit called with closing_prices={closing_prices}, stock_name={stock_name}')
-    S_n_list = []
+def fitting(closing_prices, stock_symbol):
+    logging.debug(f'fitting called with closing_prices={closing_prices}, stock_symbol={stock_symbol}')
+    Fitting_S_n_list = []
     v_list = []
     first_run = True
     
     # Check if we have enough data points
-    if len(closing_prices) < 5:
-        st.error("Tidak cukup data untuk melakukan fitting. Minimal 5 data point diperlukan.")
+    if len(closing_prices) < 4:
+        st.error("Tidak cukup data untuk melakukan fitting. Minimal 4 data point diperlukan.")
         return [], []
     
-    for i in range(4):
-        S_n_list.append(float(closing_prices[i]))
+    for i in range(3):
+        Fitting_S_n_list.append(float(closing_prices[i]))
 
-    for i in range(4, len(closing_prices)):
-        S_minus_1 = closing_prices[i - 4]
-        S_0 = closing_prices[i - 3]
-        S_1 = closing_prices[i - 2]
-        S_2 = closing_prices[i - 1]
-        S_3 = closing_prices[i]
+    for i in range(3, len(closing_prices)):
+        S_minus_1 = closing_prices[i - 3]
+        S_0 = closing_prices[i - 2]
+        S_1 = closing_prices[i - 1]
+        S_2 = closing_prices[i]
         
-        v_0 = calculate_v_n(S_0, S_minus_1)
-        v_1 = calculate_v_n(S_1, S_0)
-        v_2 = calculate_v_n(S_2, S_1)
-        v_3 = calculate_v_n(S_3, S_2)
+        v_0 = determine_v_n(S_0, S_minus_1)
+        v_1 = determine_v_n(S_1, S_0)
+        v_2 = determine_v_n(S_2, S_1)
         
         if first_run:
             v_list.append(v_0)
             v_list.append(v_1)
-            v_list.append(v_2)
             first_run = False
-        v_list.append(v_3)
+        v_list.append(v_2)
 
         try:
-            alpha_n = calculate_alpha_n(S_0, S_1, S_2, S_3)
-            beta_n = calculate_beta_n(S_1, S_2, S_3, alpha_n)
-            h_n = calculate_h_n(v_0, alpha_n, beta_n)
-            condition_1 = (v_3 + (beta_n / alpha_n)) * v_3
-            S_n = calculate_s_n(S_0, alpha_n, beta_n, h_n, condition_1, S_3, v_3, v_0)
+            alpha_n = determine_alpha_n(S_minus_1,S_0, S_1, S_2)
+            beta_n = determine_beta_n(S_minus_1,S_1, S_2, alpha_n)
+            h_n = determine_h_n(v_0, alpha_n, beta_n)
+            condition_1 = (v_2 + (beta_n / alpha_n)) * v_2
+            S_n = determine_s_n(S_minus_1, alpha_n, beta_n, h_n, condition_1, S_2, v_2, v_0)
         except (ZeroDivisionError) as e:
             logging.warning(f"Error in calculation at index {i}: {e}. Using fallback.")
-            S_n = S_3  # fallback, data tidak berubah
+            S_n = S_2  # fallback, data tidak berubah
 
-        S_n_list.append(float(S_n))
-        logging.debug(f'Appended S_n={S_n} to S_n_list')
+        Fitting_S_n_list.append(float(S_n))
+        logging.debug(f'Appended S_n={S_n} to Fitting_S_n_list')
     
-    return S_n_list, v_list
+    return Fitting_S_n_list, v_list
 
-def forecast(S_n_list, start_date, end_date, stock_name):
-    if len(S_n_list) < 5:
-        st.error("Tidak cukup data fitting untuk melakukan forecast.")
+def forecasting(Fitting_S_n_list, start_date, end_date, stock_symbol):
+    if len(Fitting_S_n_list) < 4:
+        st.error("Tidak cukup data fitting untuk melakukan forecasting.")
         return [], []
         
-    S_last = S_n_list[-5:].copy()  # Make a copy to avoid modifying original
+    fitting_S_last = Fitting_S_n_list[-4:].copy()  # Make a copy to avoid modifying original
     
     try:
-        closing_prices_full = gd.get_data(stock_name, start_date, end_date)
+        closing_prices_full = gd.get_data(stock_symbol, start_date, end_date)
         closing_prices_full = [price.item() for price in closing_prices_full]
         closing_prices_full = filter_prices_duplicates(closing_prices_full)
     except Exception as e:
         st.error(f"Error getting forecast data: {e}")
         return [], []
     
-    forecast_days = len(closing_prices_full) - len(S_n_list)
+    forecast_days = len(closing_prices_full) - len(Fitting_S_n_list)
     
     if forecast_days <= 0:
-        st.warning("Tidak ada data baru untuk di-forecast.")
-        return [], closing_prices_full[len(S_n_list)-1:]
+        st.warning("Tidak terdapat cukup data untuk melakukan forecast.")
+        return [], closing_prices_full[len(Fitting_S_n_list)-1:]
 
-    for i in range(4, forecast_days + 4):
-        if i >= len(S_last):
+    for i in range(3, forecast_days + 3):
+        if i >= len(fitting_S_last):
             break
             
-        S_minus_1 = S_last[i - 4]
-        S_0 = S_last[i - 3]
-        S_1 = S_last[i - 2]
-        S_2 = S_last[i - 1]
-        S_3 = S_last[i]
+        S_minus_1 = fitting_S_last[i - 3]
+        S_0 = fitting_S_last[i - 2]
+        S_1 = fitting_S_last[i - 1]
+        S_2 = fitting_S_last[i]
         
-        v_0 = calculate_v_n(S_0, S_minus_1)
-        v_3 = calculate_v_n(S_3, S_2)
+        v_0 = determine_v_n(S_0, S_minus_1)
+        v_2 = determine_v_n(S_2, S_1)
         
         try:
-            alpha_n = calculate_alpha_n(S_0, S_1, S_2, S_3)
-            beta_n = calculate_beta_n(S_1, S_2, S_3, alpha_n)
-            h_n = calculate_h_n(v_0, alpha_n, beta_n)
-            condition_1 = (v_3 + (beta_n / alpha_n)) * v_3
-            S_n = calculate_s_n(S_0, alpha_n, beta_n, h_n, condition_1, S_3, v_3, v_0)
+            alpha_n = determine_alpha_n(S_minus_1,S_0, S_1, S_2)
+            beta_n = determine_beta_n(S_0, S_1, S_2, alpha_n)
+            h_n = determine_h_n(v_0, alpha_n, beta_n)
+            condition_1 = (v_2 + (beta_n / alpha_n)) * v_2
+            S_n = determine_s_n(S_minus_1, alpha_n, beta_n, h_n, condition_1, S_2, v_2, v_0)
         except (ZeroDivisionError) as e:
             logging.warning(f"Error in forecast at step {i}: {e}. Using previous value.")
-            S_n = S_3
+            S_n = S_2
             
-        S_last.append(float(S_n))
+        fitting_S_last.append(float(S_n))
     
-    S_last = S_last[4:]
-    closing_forecast = closing_prices_full[len(S_n_list)-1:]
-    return S_last, closing_forecast
+    forecast_S_list = fitting_S_last[3:] 
+    closing_forecast = closing_prices_full[len(Fitting_S_n_list):] #hilangin (-1)
+    return forecast_S_list, closing_forecast
 
 def filter_prices_duplicates(closing_prices):
     if not closing_prices:
@@ -232,7 +231,7 @@ st.title("📈 Stock Forecasting Web App")
 
 # Sidebar
 st.sidebar.header("🔍 Pilih Parameter")
-stock_name = st.sidebar.text_input("Stock Symbol", value="^JKSE")
+stock_symbol = st.sidebar.text_input("Stock Symbol", value="^JKSE")
 start_date = st.sidebar.date_input("Start Date", value=datetime(2024, 1, 1))
 
 # End Date Option with Radio Button
@@ -298,46 +297,46 @@ if st.sidebar.button("🔮 Jalankan Forecast"):
     try:
         with st.spinner("Mengambil dan memproses data..."):
             # Get initial data
-            closing_prices = gd.get_data(stock_name, start_date, end_date)
+            closing_prices = gd.get_data(stock_symbol, start_date, end_date)
             closing_prices = [price.item() for price in closing_prices]
             closing_prices = filter_prices_duplicates(closing_prices)
             
-            if len(closing_prices) < 5:
-                st.error("Data tidak cukup untuk melakukan forecasting. Minimal 5 data point diperlukan.")
+            if len(closing_prices) < 4:
+                st.error("Data tidak cukup untuk melakukan forecasting. Minimal 4 data point diperlukan.")
                 st.stop()
 
             # FITTING
-            S_n_list, v_list = fit(closing_prices, stock_name)
+            Fitting_S_n_list, v_list = fitting(closing_prices, stock_symbol)
             
-            if not S_n_list:
+            if not Fitting_S_n_list:
                 st.error("Gagal melakukan fitting data.")
                 st.stop()
                 
-            mape_fit = calculate_MAPE_list(closing_prices, S_n_list)
+            mape_fit = determine_MAPE_list(closing_prices, Fitting_S_n_list)
 
             # FORECASTING
-            S_forecast, closing_forecast = forecast(
-                S_n_list,
+            S_forecast, closing_forecast = forecasting(
+                Fitting_S_n_list,
                 start_date.strftime("%Y-%m-%d"),
                 forecast_end_date.strftime("%Y-%m-%d"),
-                stock_name
+                stock_symbol
             )
             
             if S_forecast and closing_forecast:
-                mape_forecast = calculate_MAPE_list(closing_forecast, S_forecast)
+                mape_forecast = determine_MAPE_list(closing_forecast, S_forecast)
             else:
                 mape_forecast = []
 
         st.success("Selesai!")
 
         # Display results only if we have valid data
-        if S_n_list:
+        if Fitting_S_n_list:
             # Grafik 1: Fitting vs Actual
-            st.subheader(f"📊 Grafik Fitting vs Actual ({stock_name})")
+            st.subheader(f"📊 Grafik Fitting vs Actual ({stock_symbol})")
             fig_fit, ax_fit = plt.subplots(figsize=(10, 6))
             ax_fit.plot(closing_prices, label="Actual", color='black', linewidth=2)
-            ax_fit.plot(S_n_list, label="Fitted", color='blue', linewidth=2)
-            ax_fit.set_title(f"Fitting Data Harga Saham ({stock_name})")
+            ax_fit.plot(Fitting_S_n_list, label="Fitted", color='blue', linewidth=2)
+            ax_fit.set_title(f"Fitting Data Harga Saham ({stock_symbol})")
             ax_fit.set_xlabel("Hari")
             ax_fit.set_ylabel("Harga")
             ax_fit.legend()
@@ -346,7 +345,7 @@ if st.sidebar.button("🔮 Jalankan Forecast"):
 
             # Grafik 2: Fitting + Forecast vs Actual (only if forecast data exists)
             if S_forecast and closing_forecast:
-                st.subheader(f"📈 Grafik Fitting + Forecast vs Actual ({stock_name})")
+                st.subheader(f"📈 Grafik Fitting + Forecast vs Actual ({stock_symbol})")
                 fig_forecast, ax_forecast = plt.subplots(figsize=(12, 6))
                 
                 # Plot actual data
@@ -354,19 +353,19 @@ if st.sidebar.button("🔮 Jalankan Forecast"):
                 ax_forecast.plot(all_actual, label="Actual", color='black', linewidth=2)
                 
                 # Plot fitted data
-                ax_forecast.plot(range(len(S_n_list)), S_n_list, label="Fitted", color='blue', linewidth=2)
+                ax_forecast.plot(range(len(Fitting_S_n_list)), Fitting_S_n_list, label="Fitted", color='blue', linewidth=2)
                 
                 # Plot forecast data
-                forecast_start_idx = len(S_n_list)
+                forecast_start_idx = len(Fitting_S_n_list)-1
                 forecast_end_idx = forecast_start_idx + len(S_forecast)
                 ax_forecast.plot(range(forecast_start_idx, forecast_end_idx), S_forecast, 
                                label="Forecast", color='orange', linewidth=2)
                 
-                # Add vertical line to show where forecast starts
-                ax_forecast.axvline(x=len(closing_prices), color='red', linestyle='--', 
+                # Add vertical line to show where forecast starts 
+                ax_forecast.axvline(x=len(closing_prices)-1, color='red', linestyle='--', 
                                   label='Forecast Start', alpha=0.7)
                 
-                ax_forecast.set_title(f"Fitting dan Forecast Harga Saham ({stock_name})")
+                ax_forecast.set_title(f"Fitting dan Forecast Harga Saham ({stock_symbol})")
                 ax_forecast.set_xlabel("Hari")
                 ax_forecast.set_ylabel("Harga")
                 ax_forecast.legend()
@@ -378,7 +377,7 @@ if st.sidebar.button("🔮 Jalankan Forecast"):
                 st.subheader(f"📉 Hasil MAPE Fitting - Rata-rata: {np.mean(mape_fit):.2f}%")
                 fig_mape_fit, ax_mape_fit = plt.subplots(figsize=(10, 6))
                 ax_mape_fit.plot(mape_fit, color='purple', label='MAPE Fitting (%)', linewidth=2)
-                ax_mape_fit.set_title(f"Grafik MAPE Selama Fitting ({stock_name})")
+                ax_mape_fit.set_title(f"Grafik MAPE Selama Fitting ({stock_symbol})")
                 ax_mape_fit.set_xlabel("Hari")
                 ax_mape_fit.set_ylabel("MAPE (%)")
                 ax_mape_fit.legend()
@@ -390,7 +389,7 @@ if st.sidebar.button("🔮 Jalankan Forecast"):
                 st.subheader(f"📉 Hasil MAPE Forecast - Rata-rata: {np.mean(mape_forecast):.2f}%")
                 fig_mape_forecast, ax_mape_forecast = plt.subplots(figsize=(10, 6))
                 ax_mape_forecast.plot(mape_forecast, color='orange', label='MAPE Forecast (%)', linewidth=2)
-                ax_mape_forecast.set_title(f"Grafik MAPE Selama Forecasting ({stock_name})")
+                ax_mape_forecast.set_title(f"Grafik MAPE Selama Forecasting ({stock_symbol})")
                 ax_mape_forecast.set_xlabel("Hari")
                 ax_mape_forecast.set_ylabel("MAPE (%)")
                 ax_mape_forecast.legend()
@@ -402,12 +401,12 @@ if st.sidebar.button("🔮 Jalankan Forecast"):
             if S_forecast and closing_forecast:
                 df_result = pd.DataFrame({
                     "Actual": closing_prices + closing_forecast,
-                    "Forecast": S_n_list + S_forecast
+                    "Forecast": Fitting_S_n_list + S_forecast
                 })
             else:
                 df_result = pd.DataFrame({
                     "Actual": closing_prices,
-                    "Fitted": S_n_list
+                    "Fitted": Fitting_S_n_list
                 })
             st.dataframe(df_result)
             
