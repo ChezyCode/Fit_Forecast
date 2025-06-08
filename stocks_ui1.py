@@ -356,13 +356,13 @@ if st.sidebar.button("🔮 Jalankan Forecast"):
                 ax_forecast.plot(range(len(Fitting_S_n_list)), Fitting_S_n_list, label="Fitted", color='blue', linewidth=2)
                 
                 # Plot forecast data
-                forecast_start_idx = len(Fitting_S_n_list)-1
+                forecast_start_idx = len(Fitting_S_n_list)
                 forecast_end_idx = forecast_start_idx + len(S_forecast)
                 ax_forecast.plot(range(forecast_start_idx, forecast_end_idx), S_forecast, 
                                label="Forecast", color='orange', linewidth=2)
                 
                 # Add vertical line to show where forecast starts 
-                ax_forecast.axvline(x=len(closing_prices)-1, color='red', linestyle='--', 
+                ax_forecast.axvline(x=len(closing_prices), color='red', linestyle='--', 
                                   label='Forecast Start', alpha=0.7)
                 
                 ax_forecast.set_title(f"Fitting dan Forecast Harga Saham ({stock_symbol})")
