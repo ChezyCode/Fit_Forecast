@@ -129,38 +129,41 @@ def fitting(closing_prices, stock_symbol):
     first_run = True
     
     # Check if we have enough data points
-    if len(closing_prices) < 4:
-        st.error("Tidak cukup data untuk melakukan fitting. Minimal 4 data point diperlukan.")
+    if len(closing_prices) < 5:
+        st.error("Tidak cukup data untuk melakukan fitting. Minimal 5 data point diperlukan.")
         return [], []
     
-    for i in range(3):
+    for i in range(4):
         Fitting_S_n_list.append(float(closing_prices[i]))
 
-    for i in range(3, len(closing_prices)):
-        S_minus_1 = closing_prices[i - 3]
-        S_0 = closing_prices[i - 2]
-        S_1 = closing_prices[i - 1]
-        S_2 = closing_prices[i]
+    for i in range(4, len(closing_prices)):
+        S_minus_1 = closing_prices[i - 4]
+        S_0 = closing_prices[i - 3]
+        S_1 = closing_prices[i - 2]
+        S_2 = closing_prices[i - 1]
+        S_3 = closing_prices[i]
         
         v_0 = determine_v_n(S_0, S_minus_1)
         v_1 = determine_v_n(S_1, S_0)
         v_2 = determine_v_n(S_2, S_1)
+        v_3 = determine_v_n(S_3, S_2)
         
         if first_run:
             v_list.append(v_0)
             v_list.append(v_1)
+            v_list.append(v_2)
             first_run = False
-        v_list.append(v_2)
+        v_list.append(v_3)
 
         try:
-            alpha_n = determine_alpha_n(S_minus_1,S_0, S_1, S_2)
-            beta_n = determine_beta_n(S_minus_1,S_1, S_2, alpha_n)
+            alpha_n = determine_alpha_n(S_0, S_1, S_2, S_3)
+            beta_n = determine_beta_n(S_1, S_2, S_3, alpha_n)
             h_n = determine_h_n(v_0, alpha_n, beta_n)
-            condition_1 = (v_2 + (beta_n / alpha_n)) * v_2
-            S_n = determine_s_n(S_minus_1, alpha_n, beta_n, h_n, condition_1, S_2, v_2, v_0)
+            condition_1 = (v_3 + (beta_n / alpha_n)) * v_3
+            S_n = determine_s_n(S_0, alpha_n, beta_n, h_n, condition_1, S_3, v_3, v_0)
         except (ZeroDivisionError) as e:
             logging.warning(f"Error in calculation at index {i}: {e}. Using fallback.")
-            S_n = S_2  # fallback, data tidak berubah
+            S_n = S_3  # fallback, data tidak berubah
 
         Fitting_S_n_list.append(float(S_n))
         logging.debug(f'Appended S_n={S_n} to Fitting_S_n_list')
@@ -185,36 +188,37 @@ def forecasting(Fitting_S_n_list, start_date, end_date, stock_symbol):
     forecast_days = len(closing_prices_full) - len(Fitting_S_n_list)
     
     if forecast_days <= 0:
-        st.warning("Tidak terdapat cukup data untuk melakukan forecast.")
+        st.warning("Tidak ada data baru untuk di-forecast.")
         return [], closing_prices_full[len(Fitting_S_n_list)-1:]
 
-    for i in range(3, forecast_days + 3):
+    for i in range(4, forecast_days + 4):
         if i >= len(fitting_S_last):
             break
             
-        S_minus_1 = fitting_S_last[i - 3]
-        S_0 = fitting_S_last[i - 2]
-        S_1 = fitting_S_last[i - 1]
-        S_2 = fitting_S_last[i]
+        S_minus_1 = fitting_S_last[i - 4]
+        S_0 = fitting_S_last[i - 3]
+        S_1 = fitting_S_last[i - 2]
+        S_2 = fitting_S_last[i - 1]
+        S_3 = fitting_S_last[i]
         
         v_0 = determine_v_n(S_0, S_minus_1)
-        v_2 = determine_v_n(S_2, S_1)
+        v_3 = determine_v_n(S_3, S_2)
         
         try:
-            alpha_n = determine_alpha_n(S_minus_1,S_0, S_1, S_2)
-            beta_n = determine_beta_n(S_0, S_1, S_2, alpha_n)
+            alpha_n = determine_alpha_n(S_0, S_1, S_2, S_3)
+            beta_n = determine_beta_n(S_1, S_2, S_3, alpha_n)
             h_n = determine_h_n(v_0, alpha_n, beta_n)
-            condition_1 = (v_2 + (beta_n / alpha_n)) * v_2
-            S_n = determine_s_n(S_minus_1, alpha_n, beta_n, h_n, condition_1, S_2, v_2, v_0)
+            condition_1 = (v_3 + (beta_n / alpha_n)) * v_3
+            S_n = determine_s_n(S_0, alpha_n, beta_n, h_n, condition_1, S_3, v_3, v_0)
         except (ZeroDivisionError) as e:
             logging.warning(f"Error in forecast at step {i}: {e}. Using previous value.")
-            S_n = S_2
+            S_n = S_3
             
         fitting_S_last.append(float(S_n))
     
-    forecast_S_list = fitting_S_last[3:] 
-    closing_forecast = closing_prices_full[len(Fitting_S_n_list):] #hilangin (-1)
-    return forecast_S_list, closing_forecast
+    fitting_S_last = fitting_S_last[4:]
+    closing_forecast = closing_prices_full[len(Fitting_S_n_list)-1:]
+    return fitting_S_last, closing_forecast
 
 def filter_prices_duplicates(closing_prices):
     if not closing_prices:
@@ -301,8 +305,8 @@ if st.sidebar.button("🔮 Jalankan Forecast"):
             closing_prices = [price.item() for price in closing_prices]
             closing_prices = filter_prices_duplicates(closing_prices)
             
-            if len(closing_prices) < 4:
-                st.error("Data tidak cukup untuk melakukan forecasting. Minimal 4 data point diperlukan.")
+            if len(closing_prices) < 5:
+                st.error("Data tidak cukup untuk melakukan forecasting. Minimal 5 data point diperlukan.")
                 st.stop()
 
             # FITTING
@@ -356,13 +360,13 @@ if st.sidebar.button("🔮 Jalankan Forecast"):
                 ax_forecast.plot(range(len(Fitting_S_n_list)), Fitting_S_n_list, label="Fitted", color='blue', linewidth=2)
                 
                 # Plot forecast data
-                forecast_start_idx = len(Fitting_S_n_list)-1
+                forecast_start_idx = len(Fitting_S_n_list)
                 forecast_end_idx = forecast_start_idx + len(S_forecast)
                 ax_forecast.plot(range(forecast_start_idx, forecast_end_idx), S_forecast, 
                                label="Forecast", color='orange', linewidth=2)
                 
-                # Add vertical line to show where forecast starts 
-                ax_forecast.axvline(x=len(closing_prices)-1, color='red', linestyle='--', 
+                # Add vertical line to show where forecast starts
+                ax_forecast.axvline(x=len(closing_prices), color='red', linestyle='--', 
                                   label='Forecast Start', alpha=0.7)
                 
                 ax_forecast.set_title(f"Fitting dan Forecast Harga Saham ({stock_symbol})")
