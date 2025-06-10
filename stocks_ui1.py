@@ -290,7 +290,7 @@ st.sidebar.subheader("📋 Ringkasan Tanggal")
 st.sidebar.write(f"**Start Date:** {start_date.strftime('%Y-%m-%d')}")
 st.sidebar.write(f"**End Date:** {end_date.strftime('%Y-%m-%d')}")
 st.sidebar.write(f"**Forecast Until:** {forecast_end_date.strftime('%Y-%m-%d')}")
-st.sidebar.write(f"**Training Period:** {(end_date - start_date).days} hari")
+st.sidebar.write(f"**Fitting Period:** {(end_date - start_date).days} hari")
 st.sidebar.write(f"**Forecast Period:** {(forecast_end_date - end_date).days} hari")
 
 if st.sidebar.button("🔮 Jalankan Forecast"):
@@ -415,7 +415,7 @@ if st.sidebar.button("🔮 Jalankan Forecast"):
             col1, col2, col3, col4 = st.columns(4)
             
             with col1:
-                st.metric("Jumlah Data Training", len(closing_prices))
+                st.metric("Jumlah Data Fitting", len(closing_prices))
             with col2:
                 if mape_fit:
                     st.metric("MAPE Fitting", f"{np.mean(mape_fit):.2f}%")
