@@ -8,10 +8,6 @@ import logging
 import mpmath as mp
 import matplotlib.pyplot as plt
 
-
-st.title("Stocks Forecasting Web [PALING DASAR]")
-st.write("Ini adalah website untuk memprediksi harga saham")
-
 mp.dps = 100
 
 logging.basicConfig(
@@ -228,10 +224,11 @@ def filter_prices_duplicates(closing_prices):
 
 # Streamlit UI
 st.title("📈 Stock Forecasting Web App")
+st.write("Ini adalah website untuk memprediksi harga saham")
 
 # Sidebar
-st.sidebar.header("🔍 Pilih Parameter")
-stock_symbol = st.sidebar.text_input("Stock Symbol", value="^JKSE")
+# st.sidebar.header("🔍 Pilih Parameter")  #mw ganti dengan yang lain 
+stock_symbol = st.sidebar.text_input("Stock Symbol", value="BBCA.JK")
 start_date = st.sidebar.date_input("Start Date", value=datetime(2024, 1, 1))
 
 # End Date Option with Radio Button
@@ -265,7 +262,7 @@ forecast_end_date_option = st.sidebar.radio(
 )
 
 if forecast_end_date_option == "Tanggal Spesifik":
-    forecast_end_date = st.sidebar.date_input("Forecast Until", value=datetime(2024, 11, 27))
+    forecast_end_date = st.sidebar.date_input("Forecast Until", value=datetime(2024, 8, 27))
 else:
     forecast_days_count = st.sidebar.number_input(
         "Jumlah hari dari End Date:",
@@ -395,20 +392,6 @@ if st.sidebar.button("🔮 Jalankan Forecast"):
                 ax_mape_forecast.legend()
                 ax_mape_forecast.grid(True, alpha=0.3)
                 st.pyplot(fig_mape_forecast)
-
-            # Tabel hasil
-            st.subheader("📋 Tabel Ringkasan Data")
-            if S_forecast and closing_forecast:
-                df_result = pd.DataFrame({
-                    "Actual": closing_prices + closing_forecast,
-                    "Forecast": Fitting_S_n_list + S_forecast
-                })
-            else:
-                df_result = pd.DataFrame({
-                    "Actual": closing_prices,
-                    "Fitted": Fitting_S_n_list
-                })
-            st.dataframe(df_result)
             
             # Display summary statistics
             st.subheader("📊 Statistik Ringkasan")
