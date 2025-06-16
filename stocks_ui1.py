@@ -3,10 +3,13 @@ from io import BytesIO
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
-import getting_data as gd
+import yfinance as yf
 import logging
 import mpmath as mp
 import matplotlib.pyplot as plt
+import openpyxl
+from openpyxl.styles import Font, PatternFill, Alignment
+from openpyxl.utils.dataframe import dataframe_to_rows
 
 mp.dps = 100
 
@@ -15,6 +18,13 @@ logging.basicConfig(
     format="%(asctime)s | %(levelname)s | %(filename)s:%(lineno)d | %(message)s",
     handlers=[logging.StreamHandler()]
 )
+
+# Getting data from Yahoo finance (previously in getting_data.py)
+def get_data(stock_name, start_date, end_date):
+    data: pd.DataFrame = yf.download(stock_name, start=start_date, end=end_date, auto_adjust=False)
+    closing_prices = data['Close']
+    s_obs = closing_prices.to_numpy()
+    return s_obs
 
 def determine_v_n(Sn,Sn_1):
     v_n = (Sn - Sn_1) / 1 #delta_t = 1
@@ -171,7 +181,7 @@ def forecasting(Fitting_S_n_list, start_date, end_date, stock_symbol):
     fitting_S_last = Fitting_S_n_list[-4:].copy()  # Make a copy to avoid modifying original
     
     try:
-        closing_prices_full = gd.get_data(stock_symbol, start_date, end_date)
+        closing_prices_full = get_data(stock_symbol, start_date, end_date)
         closing_prices_full = [price.item() for price in closing_prices_full]
         closing_prices_full = filter_prices_duplicates(closing_prices_full)
     except Exception as e:
@@ -182,7 +192,7 @@ def forecasting(Fitting_S_n_list, start_date, end_date, stock_symbol):
     
     if forecast_days <= 0:
         st.warning("Tidak terdapat cukup data untuk melakukan forecast.")
-        return [], closing_prices_full[len(Fitting_S_n_list)-1:]
+        return [], closing_prices_full[len(Fitting_S_n_list):]
 
     for i in range(3, forecast_days + 3):
         if i >= len(fitting_S_last):
@@ -222,79 +232,218 @@ def filter_prices_duplicates(closing_prices):
             filtered_prices.append(closing_prices[i])
     return filtered_prices
 
-# Streamlit UI
-st.title("📈 Stock Forecasting Web App")
-st.write("Ini adalah website untuk memprediksi harga saham")
+def create_excel_download(stock_symbol, start_date, end_date, forecast_end_date, 
+                         closing_prices, Fitting_S_n_list, S_forecast, closing_forecast):
+    """
+    Create Excel file with actual dates from Yahoo Finance data, fitting data, and forecast data
+    """
+    try:
+        # Get actual dates from Yahoo Finance for fitting period
+        fitting_data = yf.download(stock_symbol, start=start_date, end=end_date, auto_adjust=False)
+        fitting_dates = fitting_data.index.tolist()
+        
+        # Filter dates to match the length of closing_prices (after duplicate removal)
+        if len(fitting_dates) > len(closing_prices):
+            # If we have more dates than prices (due to duplicate filtering), 
+            # we need to align them properly
+            fitting_dates = fitting_dates[:len(closing_prices)]
+        
+        # Create DataFrame for fitting period
+        fitting_df = pd.DataFrame({
+            'Date': fitting_dates,
+            'Actual_Price': closing_prices,
+            'Fitted_Price': Fitting_S_n_list[:len(closing_prices)] if len(Fitting_S_n_list) >= len(closing_prices) else Fitting_S_n_list + [None] * (len(closing_prices) - len(Fitting_S_n_list)),
+            'Type': 'Fitting'
+        })
+        
+        # Create DataFrame for forecast period if forecast data exists
+        if S_forecast and closing_forecast:
+            # Get actual dates from Yahoo Finance for forecast period
+            forecast_data = yf.download(stock_symbol, start=end_date, end=forecast_end_date, auto_adjust=False)
+            forecast_dates = forecast_data.index.tolist()
+            
+            # Remove the first date if it overlaps with fitting period
+            if forecast_dates and fitting_dates and forecast_dates[0] <= fitting_dates[-1]:
+                forecast_dates = forecast_dates[1:]
+            
+            # Align forecast dates with forecast data length
+            min_forecast_len = min(len(forecast_dates), len(closing_forecast), len(S_forecast))
+            forecast_dates = forecast_dates[:min_forecast_len]
+            closing_forecast = closing_forecast[:min_forecast_len]
+            S_forecast = S_forecast[:min_forecast_len]
+            
+            forecast_df = pd.DataFrame({
+                'Date': forecast_dates,
+                'Actual_Price': closing_forecast,
+                'Fitted_Price': None,
+                'Forecast_Price': S_forecast,
+                'Type': 'Forecast'
+            })
+            
+            # Add Forecast_Price column to fitting_df for consistency
+            fitting_df['Forecast_Price'] = None
+            
+            # Combine both DataFrames
+            combined_df = pd.concat([fitting_df, forecast_df], ignore_index=True)
+        else:
+            # If no forecast data, just use fitting data
+            fitting_df['Forecast_Price'] = None
+            combined_df = fitting_df
+        
+        # Reorder columns
+        combined_df = combined_df[['Date', 'Actual_Price', 'Fitted_Price', 'Forecast_Price', 'Type']]
+        
+        # Create Excel file in memory
+        output = BytesIO()
+        
+        # Create workbook and worksheet
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = f"{stock_symbol}_Analysis"
+        
+        # Add title and metadata
+        ws['A1'] = f"Stock Analysis Report - {stock_symbol}"
+        ws['A2'] = f"Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        ws['A3'] = f"Fitting Period: {start_date} to {end_date}"
+        ws['A4'] = f"Forecast Period: {end_date} to {forecast_end_date}"
+        ws['A5'] = ""  # Empty row
+        
+        # Style the title
+        title_font = Font(size=14, bold=True)
+        ws['A1'].font = title_font
+        
+        # Add headers starting from row 6
+        headers = ['Date', 'Actual Price', 'Fitted Price', 'Forecast Price', 'Type']
+        for col, header in enumerate(headers, 1):
+            cell = ws.cell(row=6, column=col, value=header)
+            cell.font = Font(bold=True)
+            cell.fill = PatternFill(start_color="CCCCCC", end_color="CCCCCC", fill_type="solid")
+            cell.alignment = Alignment(horizontal="center")
+        
+        # Add data starting from row 7
+        for row_idx, (_, row) in enumerate(combined_df.iterrows(), 7):
+            # Format date properly
+            if pd.notna(row['Date']):
+                if hasattr(row['Date'], 'strftime'):
+                    ws.cell(row=row_idx, column=1, value=row['Date'].strftime('%Y-%m-%d'))
+                else:
+                    ws.cell(row=row_idx, column=1, value=str(row['Date']))
+            else:
+                ws.cell(row=row_idx, column=1, value="")
+                
+            ws.cell(row=row_idx, column=2, value=row['Actual_Price'])
+            ws.cell(row=row_idx, column=3, value=row['Fitted_Price'])
+            ws.cell(row=row_idx, column=4, value=row['Forecast_Price'])
+            ws.cell(row=row_idx, column=5, value=row['Type'])
+        
+        # Auto-adjust column widths
+        for column in ws.columns:
+            max_length = 0
+            column_letter = column[0].column_letter
+            for cell in column:
+                try:
+                    if len(str(cell.value)) > max_length:
+                        max_length = len(str(cell.value))
+                except:
+                    pass
+            adjusted_width = min(max_length + 2, 20)
+            ws.column_dimensions[column_letter].width = adjusted_width
+        
+        # Save to BytesIO
+        wb.save(output)
+        output.seek(0)
+        
+        return output.getvalue()
+        
+    except Exception as e:
+        logging.error(f"Error in create_excel_download: {e}")
 
-# Sidebar
-# st.sidebar.header("🔍 Pilih Parameter")  #mw ganti dengan yang lain 
-stock_symbol = st.sidebar.text_input("Stock Symbol", value="BBCA.JK")
-start_date = st.sidebar.date_input("Start Date", value=datetime(2024, 1, 1))
+#--------------------------------------------------------------------------------------------------------------#
 
-# End Date Option with Radio Button
-st.sidebar.subheader("📅 End Date Options")
-end_date_option = st.sidebar.radio(
-    "Pilih metode input End Date:",
-    ("Tanggal Spesifik", "Jumlah Hari"),
-    help="Pilih apakah ingin input tanggal langsung atau berdasarkan jumlah hari dari start date"
-)
+# Streamlit UI - Main Page Layout (Simplified Design)
+st.title("📈 Stock Price Fitting and Forecasting Web")
 
-if end_date_option == "Tanggal Spesifik":
-    end_date = st.sidebar.date_input("End Date", value=datetime(2024, 5, 1))
-else:
-    days_count = st.sidebar.number_input(
-        "Jumlah hari dari Start Date:",
-        min_value=1,
-        max_value=365,
-        value=120,
-        step=1,
-        help="Masukkan jumlah hari yang ingin ditambahkan dari start date"
-    )
-    end_date = start_date + timedelta(days=days_count)
-    st.sidebar.info(f"End Date akan menjadi: {end_date.strftime('%Y-%m-%d')}")
+st.markdown("---")
 
-# Forecast End Date Option with Radio Button
-st.sidebar.subheader("🔮 Forecast End Date Options")
-forecast_end_date_option = st.sidebar.radio(
-    "Pilih metode input Forecast End Date:",
-    ("Tanggal Spesifik", "Jumlah Hari"),
-    help="Pilih apakah ingin input tanggal langsung atau berdasarkan jumlah hari dari end date"
-)
+# Input Parameter
+st.subheader("📋 Input Parameter")
 
-if forecast_end_date_option == "Tanggal Spesifik":
-    forecast_end_date = st.sidebar.date_input("Forecast Until", value=datetime(2024, 8, 27))
-else:
-    forecast_days_count = st.sidebar.number_input(
-        "Jumlah hari dari End Date:",
-        min_value=1,
-        max_value=365,
-        value=200,
-        step=1,
-        help="Masukkan jumlah hari yang ingin ditambahkan dari end date untuk forecasting"
-    )
-    forecast_end_date = end_date + timedelta(days=forecast_days_count)
-    st.sidebar.info(f"Forecast End Date akan menjadi: {forecast_end_date.strftime('%Y-%m-%d')}")
+# Create 4 columns for the input fields
+col1, col2, col3, col4 = st.columns(4)
+
+with col1:
+    st.markdown("**Stock Symbol**")
+    stock_symbol = st.text_input("", value="BBCA.JK", key="stock_input", label_visibility="collapsed")
+
+with col2:
+    st.markdown("**Fitting Start Date**")
+    start_date = st.date_input("", value=datetime(2024, 1, 1), key="start_date_input", label_visibility="collapsed")
+
+with col3:
+    st.markdown("**Fitting Period (Day)**")
+    training_days = st.number_input("", min_value=1, max_value=365, value=120, step=1, key="training_days", label_visibility="collapsed")
+
+with col4:
+    st.markdown("**Forecast Period (Day)**")
+    forecast_days = st.number_input("", min_value=1, max_value=365, value=60, step=1, key="forecast_days", label_visibility="collapsed")
+
+# Calculate dates based on training and forecast days
+end_date = start_date + timedelta(days=training_days)
+forecast_end_date = end_date + timedelta(days=forecast_days)
+
+# Advanced Options (Collapsible)
+with st.expander("⚙️ Advanced Options"):
+    col_adv1, col_adv2 = st.columns(2)
+    
+    with col_adv1:
+        use_custom_end = st.checkbox("Custom Fitting End Date", value=False)
+        if use_custom_end:
+            st.markdown("**Custom Fitting End Date**")
+            custom_end_date = st.date_input("", value=datetime(2024, 4, 30), key="custom_end", label_visibility="collapsed")
+            end_date = custom_end_date
+    
+    with col_adv2:
+        use_custom_forecast_end = st.checkbox("Custom Forecast End Date", value=False)
+        if use_custom_forecast_end:
+            st.markdown("**Custom Forecast End Date**")
+            custom_forecast_end = st.date_input("", value=datetime(2024, 6, 29), key="custom_forecast_end", label_visibility="collapsed")
+            forecast_end_date = custom_forecast_end
+
+# Ringkasan Input
+col_summary1, col_summary2 = st.columns(2)
+
+with col_summary1:
+    st.markdown(f"""
+    **📊 Fitting Period Details:**
+    - **Periode Fitting:** {start_date.strftime('%d/%m/%Y')} - {end_date.strftime('%d/%m/%Y')}
+    - **Durasi Fitting:** {training_days} hari
+    """)
+
+with col_summary2:
+    st.markdown(f"""
+    **🔮 Data Forecast Period Details:**
+    - **Periode Forecast:** {end_date.strftime('%d/%m/%Y')} - {forecast_end_date.strftime('%d/%m/%Y')}
+    - **Durasi Forecast:** {forecast_days} hari
+    """)
+
+st.markdown("---")
+
 
 # Validation
 if start_date >= end_date:
-    st.sidebar.error("Start date harus lebih kecil dari end date!")
+    st.error("Start date harus lebih kecil dari end date!")
 elif end_date >= forecast_end_date:
-    st.sidebar.error("End date harus lebih kecil dari forecast end date!")
+    st.error("End date harus lebih kecil dari forecast end date!")
 
-# Display selected dates summary
-st.sidebar.markdown("---")
-st.sidebar.subheader("📋 Ringkasan Tanggal")
-st.sidebar.write(f"**Start Date:** {start_date.strftime('%Y-%m-%d')}")
-st.sidebar.write(f"**End Date:** {end_date.strftime('%Y-%m-%d')}")
-st.sidebar.write(f"**Forecast Until:** {forecast_end_date.strftime('%Y-%m-%d')}")
-st.sidebar.write(f"**Fitting Period:** {(end_date - start_date).days} hari")
-st.sidebar.write(f"**Forecast Period:** {(forecast_end_date - end_date).days} hari")
+# Run Analysis Button (Full Width, Red/Primary Color)
+run_forecast = st.button("🔗 Submit Data", use_container_width=True, type="primary")
 
-if st.sidebar.button("🔮 Jalankan Forecast"):
+# Rest of the code remains the same for the analysis execution...
+if run_forecast:
     try:
         with st.spinner("Mengambil dan memproses data..."):
             # Get initial data
-            closing_prices = gd.get_data(stock_symbol, start_date, end_date)
+            closing_prices = get_data(stock_symbol, start_date, end_date)
             closing_prices = [price.item() for price in closing_prices]
             closing_prices = filter_prices_duplicates(closing_prices)
             
@@ -328,6 +477,22 @@ if st.sidebar.button("🔮 Jalankan Forecast"):
 
         # Display results only if we have valid data
         if Fitting_S_n_list:
+
+            # Display summary statistics
+            st.subheader("📊 Statistic Details")
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                st.metric("Jumlah Data Fitting", len(closing_prices))
+            with col2:
+                if mape_fit:
+                    st.metric("MAPE Fitting", f"{np.mean(mape_fit):.2f}%")
+            with col3:
+                if mape_forecast:
+                    st.metric("MAPE Forecast", f"{np.mean(mape_forecast):.2f}%")
+            with col4:
+                st.metric("Periode Forecast", f"{(forecast_end_date - end_date).days} hari")
+
             # Grafik 1: Fitting vs Actual
             st.subheader(f"📊 Grafik Fitting vs Actual ({stock_symbol})")
             fig_fit, ax_fit = plt.subplots(figsize=(10, 6))
@@ -392,22 +557,38 @@ if st.sidebar.button("🔮 Jalankan Forecast"):
                 ax_mape_forecast.legend()
                 ax_mape_forecast.grid(True, alpha=0.3)
                 st.pyplot(fig_mape_forecast)
-            
-            # Display summary statistics
-            st.subheader("📊 Statistik Ringkasan")
-            col1, col2, col3, col4 = st.columns(4)
-            
-            with col1:
-                st.metric("Jumlah Data Fitting", len(closing_prices))
-            with col2:
-                if mape_fit:
-                    st.metric("MAPE Fitting", f"{np.mean(mape_fit):.2f}%")
-            with col3:
-                if mape_forecast:
-                    st.metric("MAPE Forecast", f"{np.mean(mape_forecast):.2f}%")
-            with col4:
-                st.metric("Periode Forecast", f"{(forecast_end_date - end_date).days} hari")
 
+            # Create download button for Excel
+            st.subheader("💾 Download Data")
+                    
+            try:
+                excel_data = create_excel_download(
+                    stock_symbol=stock_symbol,
+                    start_date=start_date,
+                    end_date=end_date,
+                    forecast_end_date=forecast_end_date,
+                    closing_prices=closing_prices,
+                    Fitting_S_n_list=Fitting_S_n_list,
+                    S_forecast=S_forecast if S_forecast else [],
+                    closing_forecast=closing_forecast if closing_forecast else []
+                )
+                        
+                filename = f"{stock_symbol}_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+                        
+                st.download_button(
+                    label="📥 Download Excel Report",
+                    data=excel_data,
+                    file_name=filename,
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    help="Download complete analysis data in Excel format"
+                )
+                        
+                st.info(f"📊 File akan berisi data dari {start_date} hingga {forecast_end_date}")
+                        
+            except Exception as e:
+                st.error(f"Error creating Excel file: {str(e)}")
+                logging.error(f"Excel creation error: {e}")
+                
     except Exception as e:
         st.error(f"Terjadi kesalahan: {str(e)}")
         logging.error(f"Main execution error: {e}")
